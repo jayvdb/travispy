@@ -347,10 +347,10 @@ class Test:
         assert len(repos) == 25
 
         repos = self._travis.repos(member='travispy')
-        assert len(repos) == 7
+        assert len(repos) == 5
 
         repos = self._travis.repos(owner_name='travispy')
-        assert len(repos) == 6
+        assert len(repos) == 7
 
         repo = self._travis.repo(repo_slug)
         assert repo.slug == repo_slug
