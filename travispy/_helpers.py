@@ -1,5 +1,8 @@
 from .errors import TravisError
+
 import textwrap
+
+import requests
 
 
 def get_response_contents(response):
@@ -38,3 +41,24 @@ def get_response_contents(response):
     else:
         contents['status_code'] = status_code
         raise TravisError(contents)
+
+
+def get_archived_log(session, job_id):
+    '''
+    :type session: :class:`.Session`
+    :param session:
+        Session that must be used to search for result.
+
+    :param int job_id:
+        The ID of the job.
+
+    :rtype: str
+    :returns:
+        Log of the job.
+    '''
+    headers = session.headers.copy()
+    headers['Accept'] = 'text/plain; version=2'
+
+    r = requests.get(session.uri + ('/jobs/%s/log' % job_id),
+                     headers=headers)
+    return r.content.decode('utf-8')

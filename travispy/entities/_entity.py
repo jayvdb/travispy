@@ -181,6 +181,10 @@ class Entity(object):
         for info in infos:
             entity = cls(session)
             for key, value in info.items():
+                # Log.body from Travis is empty, and is fetched on demand.
+                if key == 'body' and info['type'] == 'Log':
+                    assert value == ''
+                    continue
                 setattr(entity, key, value)
             result.append(entity)
 
