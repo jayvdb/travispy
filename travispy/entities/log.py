@@ -1,9 +1,10 @@
 from ._entity import Entity
 
 from travispy._helpers import get_archived_log
+from travispy._log_parser import LogParser
 
 
-class Log(Entity):
+class Log(Entity, LogParser):
     '''
     :ivar int job_id:
         Jod ID.

@@ -22,5 +22,6 @@ For full documentation please refer to |travisci| `official API`_ documentation.
     :target: https://coveralls.io/r/menegazzo/travispy
     :alt: Coveralls
 '''
+from .errors import TravisError, ParseError, TravisLogCorrupt
 from .entities import *
 from .travispy import TravisPy

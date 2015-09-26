@@ -1,6 +1,6 @@
 class TravisError(Exception):
     '''
-    Base error for all TravisPy errors.
+    Base error for all Travis API errors.
 
     :param dict contents:
         The response contents. It may be used to create a better message.
@@ -23,3 +23,16 @@ class TravisError(Exception):
             message = self._contents.get('file')
 
         return '[%d] %s' % (status_code, message or 'Unknown error')
+
+
+class ParseError(Exception):
+    '''
+    Base error for log parsing errors.
+    '''
+
+    pass
+
+
+class TravisLogCorrupt(ParseError):
+
+    pass
