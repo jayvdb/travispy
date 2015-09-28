@@ -322,19 +322,6 @@ class LogParser(object):
                     current_command = current_block.elements[-1]
                     continue
 
-                if not nocolor_line:
-                    current_item = None # BlankLine()
-                else:
-                    current_item = None
-
-                if current_block is not None and current_item:
-                    current_block.append(current_item)
-                    if current_block.finished():
-                        #print('finishing block', current_block)
-                        current_block = None
-                        current_command = None
-                        continue
-
                 #print(line)
 
                 if blocks and blocks.last.name in ['rvm'] and blocks.last.finished():
@@ -343,12 +330,6 @@ class LogParser(object):
                 elif current_command is None and current_block in ['git.checkout', 'git.submodule'] and nocolor_line.startswith('The command "git ') and '" failed and exited with ' in nocolor_line:
                     # TODO: match the command in the quotes
                     current_command = current_block.commands[-1]
-
-                #if current_block and current_block.name.startswith('_environment') and not line:
-                #    # end of environment section
-                #    current_block = Block('_init')
-                #    blocks.append(current_block)
-                #    continue
 
                 if not current_command and current_block and current_block.commands and nocolor_line.startswith('The command "'):
                     last_command = current_block.commands[-1]
@@ -398,19 +379,6 @@ class LogParser(object):
                         current_block = Block('_stuff_after_job_cancelled-' + str(line_no))
                     blocks.append(current_block)
 
-                #if current_block == '_init' and not current_command and nocolor_line.startswith('$ '):
-                #    if nocolor_line.endswith('--version'):
-                #        current_block = Block('_versions')
-                #        blocks.append(current_block)
-                #    else:
-                #        current_command = UntimedCommand()
-                #        current_block.commands.append(current_command)
-
-                if current_block and current_block.name.startswith('git'):
-                    if nocolor_line == 'Your build has been stopped.':
-                        current_block.header_lines.append(line)
-                        raise ParseError('needs to be migrated to new framework')
-
                 current_block = blocks.last
 
                 if current_block is not None:
@@ -431,13 +399,6 @@ class LogParser(object):
                         else:
                             print('failed on line {0}: {1}'.format(line_no, line))
                             raise
-                elif no_system_info and len(blocks) == 2 and blocks[1].name == 'git' and nocolor_line.startswith('$ cd '):
-                    # block 0 should be _worker
-                    # todo; check it is 'cd <repo slug>'
-                    raise ParseError('fake git.2 needs to be migrated to new framework')
-                    fake_command = UntimedCommand('fake git.2')
-                    fake_command.lines.append(line)
-                    blocks[1].commands.append(fake_command)
                 elif nocolor_line:  # ignore blank lines
                     previous_block_name = None if not blocks else blocks[-1].name
                     raise ParseError('unexpected line after {0}: {1!r}'.format(previous_block_name, line))

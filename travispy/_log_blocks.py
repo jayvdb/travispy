@@ -21,7 +21,6 @@ class Block(object):
         self.name = name
         self.elements = []
         self.lines = []
-        self.header_lines = []
         self._finished = None
 
     @property
