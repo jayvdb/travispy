@@ -16,6 +16,7 @@ class Item(object):
         """Constructor."""
         super(Item, self).__init__()
         self._lines = []
+        self.identifier = 'unnamed'
 
     def append_line(self, line):
         self._lines.append(line)
@@ -31,8 +32,8 @@ class Item(object):
 
         lines = [remove_ansi_color(line) for line in lines]
 
-        return '<{0}: ({1} lines): {2}>'.format(
-            self.__class__.__name__, len(self._lines), lines)
+        return '<{0} {1}: ({2} lines): {3}>'.format(
+            self.__class__.__name__, self.identifier, len(self._lines), lines)
 
 
 class Note(Item):

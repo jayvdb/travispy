@@ -215,7 +215,7 @@ class LogParser(object):
                     elif current_block.name in '_activate':
                         blocks.append(CommandBlock('_versions-timed'))
                     elif current_block.name in ['before_script', 'install'] or current_block.name in ['before_script-continued', 'install-continued']:
-                        blocks.append(Block('script'))
+                        blocks.append(ScriptBlock('script'))
                     else:
                         raise ParseError('unexpected line after {0}: {1}'.format(current_block, line))
 
@@ -345,7 +345,7 @@ class LogParser(object):
                         elif exit_code_pattern.startswith(nocolor_line):
                             # TODO: The exit_code_pattern needs to be a multi-line match
                             # e.g. happy5214/pywikibot-core/6.10
-                            current_command = Note('_unsolved_exit_code')
+                            current_command = Note('_unsolved_exit_code-2')
                             current_block.commands.append(current_command)
 
                         exit_code_pattern = 'The command "{0}" failed and exited with '.format(remove_ansi_color(last_command.lines[0])[2:])
@@ -396,7 +396,7 @@ class LogParser(object):
             if blocks.last == '_done':
                 done_block = blocks.last
                 previous_block = blocks[-2]
-                assert previous_block.name == 'script'
+                assert previous_block.name in ['script', 'script-continued']
                 last_command = previous_block.commands[-1]
 
                 if last_command.exit_code is None:

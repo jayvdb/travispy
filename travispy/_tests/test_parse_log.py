@@ -37,6 +37,25 @@ def split_extended_slug(slug):
     return parts[0], parts[1], build_id, job_id
 
 
+def get_job(t, extended_slug):
+    user, project, build_id, job_id = split_extended_slug(extended_slug)
+    assert job_id
+
+    repo = t.repo(user + '/' + project)
+
+    builds = t.builds(slug=repo.slug, after_number=build_id + 1)
+    build = builds[0]
+    assert int(build.number) == build_id
+
+    build = t.build(build.id)
+
+    for build_job in build.jobs:
+        build_id, build_job_number = build_job.number.split('.')
+        if int(build_job_number) == job_id:
+            return build_job
+    raise RuntimeError('unable to get job for {0}'.format(extended_slug))
+
+
 def get_filename(extended_slug):
     """Get filename for extended slug."""
     user, project, build_id, job_id = split_extended_slug(extended_slug)
@@ -66,7 +85,7 @@ def save_job_log(job):
     with open(filename, 'wb') as f:
         f.write(job.log.body)
 
-    print('     wrote {0} with {1} chars'.format(filename, len(job.log.body)))
+    print('     wrote {0} ({1}) with {2} chars'.format(filename, job.id, len(job.log.body)))
 
 
 class Test:
@@ -83,6 +102,9 @@ class Test:
         if filename:
             file = codecs.open(filename, 'r', 'utf-8')
             log = Log.from_file(file)
+            if not job_id:
+                job = get_job(self._travis, extended_slug)
+                print('set job_id={0}'.format(job.id))
         else:
             job = self._travis.job(job_id)
             save_job_log(job)
@@ -101,6 +123,12 @@ class Test:
 
         assert log.body != ''
         assert log._parse() == {}
+
+    def test_cancelled_2_log(self):
+        log = self._get_job_log('jayvdb/pywikibot-core/1210.9', job_id=81215691)
+
+        assert log.body != ''
+        assert log._parse() != {}
 
     def test_corrupt_log(self):
         log = self._get_job_log('jayvdb/pywikibot-core/1242.10', job_id=81896198)

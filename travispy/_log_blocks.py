@@ -90,7 +90,7 @@ class Block(object):
 class CommandBlock(Block):
 
     def append_line(self, line):
-        print('CommandBlock.append_line ', line)
+        #print('CommandBlock.append_line ', line)
         nocolor_line = remove_ansi_color(line)
 
         assert self.commands
@@ -100,7 +100,10 @@ class CommandBlock(Block):
             last_command = self.commands[-2]
 
         if not isinstance(last_command, Command):
-            raise ParseError('last command is {0}: {1}'.format(type(last_command), last_command))
+            if last_command and last_command.identifier in ['_unsolved_exit_code-1', '_unsolved_exit_code-2']:
+                pass
+            else:
+                raise ParseError('last command is {0}: {1} when inserting: {2}'.format(type(last_command), last_command, line))
 
         if len(last_command.lines):
 
@@ -110,10 +113,10 @@ class CommandBlock(Block):
                 exit_code = nocolor_line[len(exit_code_pattern):-1]
                 last_command.exit_code = int(exit_code)
                 return
-            elif exit_code_pattern.startswith(nocolor_line):
+            elif nocolor_line and exit_code_pattern.startswith(nocolor_line):
                 # TODO: The exit_code_pattern needs to be a multi-line match
                 # e.g. happy5214/pywikibot-core/6.10
-                current_command = Note('_unsolved_exit_code')
+                current_command = Note('_unsolved_exit_code-1')
                 self.commands.append(current_command)
                 return
 
@@ -193,6 +196,11 @@ class MixedCommandBlock(AutoCommandBlock):
                 super(MixedCommandBlock, self).append_line(line)
             else:
                 self.elements[-1].append_line(line)
+
+
+class ScriptBlock(CommandBlock):
+
+    pass
 
 
 class OldGitBlock(MixedCommandBlock):
