@@ -61,6 +61,16 @@ class Command(Item):
     def lines(self):
         return self._lines
 
+    @property
+    def executed(self):
+        line = remove_ansi_color(self.lines[0])
+        assert line[0:2] == '$ '
+        return line[2:]
+
+    @property
+    def result(self):
+        result = '\n'.join(self.lines[1:])
+
 
 class UntimedCommand(Command):
 
@@ -93,7 +103,7 @@ class TimedCommand(Command):
         parameters = dict(parameter.split('=')
                           for parameter in parameters.split(','))
         for key, value in parameters.items():
-            setattr(self, key, value)
+            setattr(self, key, int(value))
 
     def finished(self):
         return self.start is not None

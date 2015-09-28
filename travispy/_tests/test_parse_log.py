@@ -1,3 +1,5 @@
+from __future__ import absolute_import, unicode_literals
+
 import codecs
 import glob
 import os
@@ -116,12 +118,134 @@ class Test:
         blocks = log._parse()
         block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
 
-        # block 1 is normally system_info
-        assert block_names[1] == 'git'
+        assert block_names[0] == '_worker'
+        assert '_worker' in blocks
+        block = blocks['_worker']
+
+        assert len(block.elements) == 2
+        assert isinstance(block.elements[0], Note)
+        assert len(block.elements[0].lines) == 1
+        assert block.elements[0].lines[0] == 'Using worker: worker-linux-7-2.bb.travis-ci.org:travis-linux-13'
+        assert isinstance(block.elements[1], BlankLine)
 
         assert 'before_install' in block_names
         assert 'install' in block_names
         assert 'script' in block_names
+
+        assert block_names[1] == 'git'
+        assert 'git' in blocks
+        block = blocks['git']
+
+        assert len(block.elements) == 5
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '1128f657'
+        assert command.executed == 'git clone --depth=50 --branch=patch-1 git://github.com/legoktm/pywikibot-core.git legoktm/pywikibot-core'
+
+        assert isinstance(block.elements[4], TimedCommand)
+        command = block.elements[4]
+        assert command.identifier == '10de8135'
+        assert command.executed == 'git submodule update'
+        assert command.start == 1407532617445904815
+        assert command.finish == 1407532619646888411
+        assert command.duration == 2200983596
+
+        assert block_names[2] == '_travis_yml_environment_variables'
+        assert '_travis_yml_environment_variables' in blocks
+        block = blocks['_travis_yml_environment_variables']
+
+        assert isinstance(block, TravisYmlEnvironmentVariables)
+        assert len(block.elements) == 4
+        assert isinstance(block.elements[0], Note)
+        assert len(block.elements[0].lines) == 1
+        assert 'Setting environment variables from .travis.yml' in block.elements[0].lines[0]
+        assert isinstance(block.elements[1], UntimedCommand)
+        assert len(block.elements[1].lines) == 1
+        assert block.elements[1].executed == 'export LANGUAGE=en'
+        assert len(block.elements[1].lines) == 1
+        assert isinstance(block.elements[2], UntimedCommand)
+        assert block.elements[2].executed == 'export FAMILY=wikipedia'
+        assert isinstance(block.elements[3], BlankLine)
+
+        assert block_names[3] == '_activate'
+        assert '_activate' in blocks
+        block = blocks['_activate']
+
+        assert isinstance(block.elements[0], Command)
+        assert len(block.elements[0].lines) == 1
+        assert block.elements[0].executed == 'source ~/virtualenv/python2.7/bin/activate'
+        assert block.elements[0].exit_code is None
+
+        assert block_names[4] == '_versions-timed'
+        assert '_versions-timed' in blocks
+        block = blocks['_versions-timed']
+
+        assert isinstance(block, CommandBlock)
+        assert len(block.elements) == 2
+        assert isinstance(block.elements[0], TimedCommand)
+        assert len(block.elements[0].lines) == 2
+        assert block.elements[0].executed == 'python --version'
+        assert block.elements[0].lines[1] == 'Python 2.7.8'
+        assert block.elements[0].exit_code is None
+
+        assert isinstance(block.elements[1], TimedCommand)
+        assert len(block.elements[1].lines) == 2
+        assert block.elements[1].executed == 'pip --version'
+        assert block.elements[1].lines[1] == 'pip 1.5.4 from /home/travis/virtualenv/python2.7.8/lib/python2.7/site-packages (python 2.7)'
+
+        assert block_names[5] == 'before_install'
+        assert 'before_install' in blocks
+        block = blocks['before_install']
+
+        assert len(block.elements) == 2
+
+        assert isinstance(block.elements[0], Command)
+        assert len(block.elements[0].lines) == 1
+        assert block.elements[0].executed == 'sudo apt-get update -qq'
+        assert block.elements[0].exit_code is None
+        assert block.elements[1].executed == 'sudo apt-get install -y python-imaging-tk liblua5.1-dev'
+
+        assert block_names[6] == 'install'
+        assert 'install' in blocks
+        block = blocks['install']
+
+        assert len(block.elements) == 22
+
+        assert isinstance(block.elements[0], Command)
+        assert len(block.elements[0].lines) == 1
+        assert block.elements[0].executed == "if [[ $TRAVIS_PYTHON_VERSION == '2.6' ]]; then pip install ordereddict; fi"
+        assert block.elements[21].executed == 'cd ../..'
+
+        assert block.elements[0].exit_code is None
+
+        assert block_names[7] == 'script'
+        assert 'script' in blocks
+        block = blocks['script']
+
+        assert len(block.elements) == 1
+        assert isinstance(block.elements[0], Command)
+        assert len(block.elements[0].lines) == 94
+        assert block.elements[0].executed == """if [ -n "$USER_PASSWORD" ]; then python setup.py test; else PYWIKIBOT2_NO_USER_CONFIG=1 nosetests -a '!site,!net' -v ; fi"""
+        assert 'Ran 85 tests in 34.679s' in block.elements[0].lines
+        assert 'OK (SKIP=2)' in block.elements[0].lines
+
+        # This is not correct
+        assert block.elements[0].lines[-5:] == ['Ran 85 tests in 34.679s', '', 'OK (SKIP=2)', '\x1b[0K', '']
+
+        assert block.elements[0].exit_code == 0
+
+        assert block_names[8] == '_done'
+        assert '_done' in blocks
+        block = blocks['_done']
+
+        assert isinstance(block, Done)
+        assert block.exit_code == 0
+        assert len(block.elements) == 1
+        assert isinstance(block.elements[0], Note)
+        assert block.elements[0].lines[0] == 'Done. Your build exited with 0.'
+
+        assert len(block_names) == 9
 
     def test_install_then_auto_script(self):
         log = self._get_job_log('jayvdb/pywikibot-i18n/5.1', job_id=78700066)
@@ -150,7 +274,7 @@ class Test:
         assert block_names == [
             '_no_travis_yml_warning', '_worker', '_standard_configuration_warning',
             'system_info', 'git.checkout',
-            '_container_notice', 'rvm', '_versions', 'script']
+            '_container_notice', 'rvm', '_versions', 'script', '_done']
 
     def test_submodule_checkout_failed(self):
         log = self._get_job_log('jayvdb/citeproc-py/20.1', job_id=81524549)
@@ -171,9 +295,9 @@ class Test:
 
         blocks = log._parse()
         block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
-       
+
         assert block_names[0:4] == ['_worker', 'system_info', 'git.checkout', 'git.submodule']
-        assert '_travis_yml_environment_settings' in block_names
+        assert '_travis_yml_environment_variables' in block_names
 
 
 

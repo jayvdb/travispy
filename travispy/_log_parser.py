@@ -128,7 +128,7 @@ def find_new_block(line):
                 note.append_line(line)
                 obj.append(note)
 
-            #print('Auto new block', obj)
+            # print('Auto new block', obj)
 
             return obj
 
@@ -207,7 +207,7 @@ class LogParser(object):
                     blocks.append(Block('script'))
                     
                 elif current_block and current_block.finished():
-                    if (current_block.name.endswith('_environment_settings') or
+                    if (current_block.name.endswith('_environment_variables') or
                             current_block.name == '_container_notice' or
                             current_block.name.startswith('git')):
                         blocks.append(SingleCommandBlock('_activate'))
@@ -319,8 +319,11 @@ class LogParser(object):
                         current_block = None
 
                     current_block = new_block
-                    current_command = current_block.elements[-1]
-                    continue
+                    if current_block.elements:
+                        current_command = current_block.elements[-1]
+                        continue
+                    else:
+                        current_command = None
 
                 #print(line)
 
@@ -351,20 +354,6 @@ class LogParser(object):
                             last_command.exit_code = int(exit_code)
                             continue
 
-                if current_block == 'script':
-                    if nocolor_line.startswith('Done. Your build exited with '):
-                        last_command = current_block.commands[-1]
-                        exit_code = nocolor_line[len('Done. Your build exited with '):-1]
-                        exit_code = int(exit_code)
-
-                        if last_command.exit_code is None:
-                            raise ParseError('Build exit with {0}, but last command doesnt have an exit code'.format(exit_code))
-                        elif exit_code > 0 and last_command.exit_code == 0:
-                            print('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
-                        elif last_command.exit_code != exit_code:
-                            raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
-                        continue
-
                 if current_block == '_activate' and current_block.finished():
                     print('after _activate')
                     blocks.append(AutoVersionCommandBlock('_versions'))
@@ -387,7 +376,8 @@ class LogParser(object):
                         if nocolor_line == '':
                             blocks.append(BlankLineBlock('_unexpected_blank_lines-' + str(line_no)))
                             continue
-                    #print('adding {0} to block'.format(line))
+                    if 'Done' in line:
+                        print('adding {0} to block'.format(line))
                     try:
                         current_block.append_line(line)
                     except Exception:
@@ -402,5 +392,19 @@ class LogParser(object):
                 elif nocolor_line:  # ignore blank lines
                     previous_block_name = None if not blocks else blocks[-1].name
                     raise ParseError('unexpected line after {0}: {1!r}'.format(previous_block_name, line))
+
+            if blocks.last == '_done':
+                done_block = blocks.last
+                previous_block = blocks[-2]
+                assert previous_block.name == 'script'
+                last_command = previous_block.commands[-1]
+
+                if last_command.exit_code is None:
+                    raise ParseError('Build exit with {0}, but last command doesnt have an exit code'.format(exit_code))
+                elif done_block.exit_code > 0 and last_command.exit_code == 0:
+                    print('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
+                elif last_command.exit_code != done_block.exit_code:
+                    raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
+                continue
 
         return blocks

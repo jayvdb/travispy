@@ -90,6 +90,7 @@ class Block(object):
 class CommandBlock(Block):
 
     def append_line(self, line):
+        print('CommandBlock.append_line ', line)
         nocolor_line = remove_ansi_color(line)
 
         assert self.commands
@@ -122,8 +123,7 @@ class CommandBlock(Block):
                 last_command.exit_code = int(exit_code)
                 return
 
-        else:
-            last_command.append_line(line)
+        last_command.append_line(line)
 
 
 class SingleCommandBlock(Block):
@@ -361,12 +361,12 @@ class EnvironmentSettings(RegexBlock):
         #print('appended', envvar)
 
 
-class RepositoryEnvironmentSettings(EnvironmentSettings):
+class RepositoryEnvironmentVariables(EnvironmentSettings):
 
     _match = '^Setting environment variables from repository settings'
 
 
-class TravisYmlEnvironmentSettings(EnvironmentSettings):
+class TravisYmlEnvironmentVariables(EnvironmentSettings):
 
     _match = '^Setting environment variables from \.travis\.yml'
 
@@ -395,7 +395,6 @@ class BlankLineBlock(Block):
         self.elements.append(BlankLine())
 
 
-
 class JobCancelled(RegexBlock):
 
     # two leading blank lines?
@@ -411,18 +410,40 @@ class JobStopped(RegexBlock):
     _is_note = True
 
 
+class Done(RegexBlock):
+
+    _match = '^Done. Your build exited with '
+    _is_note = False
+
+    def __init__(self, *args, **kwargs):
+        super(Done, self).__init__(*args, **kwargs)
+        self.exit_code = None
+
+    def append_line(self, line):
+        # remove trailing '.'
+        exit_code = line[len('Done. Your build exited with '):-1]
+        self.exit_code = int(exit_code)
+        note = Note()
+        note.append_line(line)
+        self.append(note)
+
+    def finished(self):
+        return self.exit_code is not None
+
+
 BLOCK_CLASSES = [
     NoTravisYmlWarning,
     Worker,
     StandardConfigurationWarning,
     PythonNoRequirements,
     ContainerNotice,
-    RepositoryEnvironmentSettings,
-    TravisYmlEnvironmentSettings,
+    RepositoryEnvironmentVariables,
+    TravisYmlEnvironmentVariables,
     JobCancelled,
     JobStopped,
     StalledJobTerminated,
     LogExceededJobTerminated,
+    Done,
 ]
 
 
