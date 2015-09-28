@@ -20,7 +20,6 @@ class Block(object):
         """Constructor."""
         self.name = name
         self.elements = []
-        self.lines = []
         self._finished = None
 
     @property
@@ -34,10 +33,10 @@ class Block(object):
         return self.elements[-1]
 
     def append(self, item):
-        if isinstance(item, BlankLine) and self.lines:
-            self.lines.append('')
+        if isinstance(item, BlankLine):
+            self.elements.append(item)
         elif not item:
-            print('{0}: inserting empty item'.format(self))
+            print('{0}: inserting empty item: {1}'.format(self, item))
             self.elements.append(item)
         else:
             self.elements.append(item)
@@ -74,47 +73,18 @@ class Block(object):
         return self.name == other
 
     def __len__(self):
-        if not self.lines and not self.commands:
-            return 0
-
-        if self.lines and self.commands:
-            if len(self.elements) == 1 and isinstance(self.elements[0], BlankLine):
-                pass
-            else:
-                raise ParseError('block with lines and commands: {0!r}'.format(self))
-
-        #assert bool(self.lines) != bool(self.commands)
-
-        if self.lines:
-            return len(self.lines)
-        else:
-            return len(self.commands)
+        return len(self.elements)
 
     def __repr__(self):
-        if not self.lines and not self.commands:
+        if not self.elements:
             return '<empty block {0}>'.format(self.name)
 
-        if self.lines and self.commands:
-            if len(self.elements) == 1 and isinstance(self.elements[0], BlankLine):
-                pass
-            else:
-                return '<mixed block {0} ({1} lines & {2} commands): {3}\n{4}'.format(self.name, len(self.lines), len(self.commands), self.lines, self.commands)
+        elements = self.elements
+        if len(elements) > 3:
+            elements = elements[0:3] + ['...']
 
-        #assert bool(self.lines) != bool(self.commands)
-        if self.commands:
-            lines = self.commands[0].lines
-        else:
-            lines = self.lines
-
-        max_lines = min(len(lines), 3)
-
-        show_lines = [remove_ansi_color(line)
-                      for line in lines[:max_lines]]
-
-        if len(lines) <= max_lines:
-            return '<block {0} ({1} lines): {2}>'.format(self.name, len(lines), show_lines)
-        else:
-            return '<block {0} ({1} lines): {2}..>'.format(self.name, len(lines), show_lines)
+        return '<block {0} ({1} elements): {2}>'.format(
+            self.name, len(self.elements), elements)
 
 
 class CommandBlock(Block):

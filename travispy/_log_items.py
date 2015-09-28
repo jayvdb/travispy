@@ -4,6 +4,7 @@ import os
 import regex
 import sys
 
+from travispy._log_functions import *
 from travispy import ParseError, TravisLogCorrupt
 
 
@@ -24,7 +25,14 @@ class Item(object):
         return self._lines
 
     def __repr__(self):
-        return '{0}'.format(self._lines)
+        lines = self._lines
+        if len(lines) > 3:
+            lines = lines[0:3] + ['..']
+
+        lines = [remove_ansi_color(line) for line in lines]
+
+        return '<{0}: ({1} lines): {2}>'.format(
+            self.__class__.__name__, len(self._lines), lines)
 
 
 class Note(Item):
