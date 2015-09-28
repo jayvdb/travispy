@@ -8,83 +8,131 @@ import os
 import regex
 import sys
 
+from collections import OrderedDict
+
 from travispy import ParseError, TravisLogCorrupt
 
 
-def remove_unprintable(s):
-    return regex.sub('[^[:print:]\x1b\n]', '', s)
+from travispy._log_functions import *
+from travispy._log_items import *
+from travispy._log_blocks import *
 
 
-def remove_ansi_color(s):
-    return regex.sub('\x1b[^mK]*[mK]', '', s)
+class BlockDict(OrderedDict):
 
+    """OrderedDict of Block."""
 
-class Command(object):
+    @staticmethod
+    def _parse_name(name):
+        """Return block name, and number as int or None."""
+        assert name
+        dotted = name.split('.')
+        if len(dotted) == 1:
+            return name, None
 
-    """Executed command."""
+        assert len(dotted) == 2
 
-    def __init__(self, identifier):
-        """Constructor."""
-        self.identifier = identifier
-        self.start = self.end = self.duration = None
-        self.lines = []
-        self.exit_code = None
+        # try to parse the second half as a number
+        # e.g. git.10
+        try:
+            num = int(dotted[1])
+            assert num is not 0
+        except ValueError:
+            num = None
 
-    def __repr__(self):
-        return self.lines[0] if self.lines else '<empty command>'
-
-
-class Block(object):
-
-    """Travis log block."""
-
-    def __init__(self, name):
-        """Constructor."""
-        self.name = name
-        self.lines = []
-        self.commands = []
-        self.header_lines = []
-
-    def __eq__(self, other):
-        return self.name == other
-
-    def __len__(self):
-        if not self.lines and not self.commands:
-            return 0
-
-        if self.lines and self.commands:
-            raise ParseError('block with lines and commands: {0!r}'.format(self))
-
-        assert bool(self.lines) != bool(self.commands)
-
-        if self.lines:
-            return len(self.lines)
+        if num:
+            return dotted[0], num
         else:
-            return len(self.commands)
+            # e.g. git.checkout .submodule .etc
+            return name, None
 
-    def __repr__(self):
-        if not self.lines and not self.commands:
-            return '<empty block {0}>'.format(self.name)
+    def _get_existing(self, name):
+        full_name = name
+        name, num = self._parse_name(full_name)
+        block = super(BlockDict, self).get(name)
+        if block is None:
+            raise KeyError('{0} ({1}) not in {2}'.format(full_name, name, self.keys()))
 
-        if self.lines and self.commands:
-              # TODO: raise exception
-            return '<mixed block {0} ({1} lines & {2} commands): {3}\n{4}'.format(self.name, len(self.lines), len(self.commands), self.lines, self.commands)
+        return block
 
-        assert bool(self.lines) != bool(self.commands)
-        if self.commands:
-            lines = self.commands[0].lines
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            if item < 0:
+                item = len(self) + item
+            elif item > len(self):
+                raise KeyError('{0} is greater than length of {1}'.format(i, len(self)))
+
+            for i, value in enumerate(self.values()):
+                if i == item:
+                    return value
+            raise KeyError('unexpected failure: {0}'.format(item))
         else:
-            lines = self.lines
+            return self._get_existing(item)
 
-        max_lines = min(len(lines), 3)
+    def get(self, name, start=False, cls=Block):
+        full_name = name
+        #print('get', full_name)
+        name, num = self._parse_name(name)
+        if name in self:
+            if start:
+                assert num and num > 1
 
-        show_lines = [remove_ansi_color(line)
-                      for line in lines[:max_lines]]
+            block = self[name]
+            if num:
+                if start:
+                    if num < 2:
+                        raise KeyError('{0} is never an existing item'.format(full_name))
+                    if num - 1 != len(block):
+                        raise KeyError('{0} while len is {1}'.format(full_name, len(block)))
+                # foo.<id> should only be used sequentially
+                assert len(block) == num - 1
 
-        if len(lines) <= max_lines:
-            return '<block {0} ({1} lines): {2}>'.format(self.name, len(lines), show_lines)
+                if block.name != self.last.name:
+                    raise ParseError('unexpected block {0} after {1}'.format(
+                        block.name, self.last.name))
+                assert block == self.last  # this is the same as above
+            return block
         else:
-            return '<block {0} ({1} lines): {2}..>'.format(self.name, len(lines), show_lines)
+            if num:
+                assert num == 1
+            new_block = cls(name)
+            self[name] = new_block
+            return new_block
+
+    def append(self, block):
+        if block.name in self:
+            raise ParseError('{0} already in {1}'.format(block, self))
+        self[block.name] = block
+
+    @property
+    def last(self):
+        """Get the last block."""
+        return self[-1]
+
+    def remove_last(self):
+        """Remove the last block."""
+        last = self.last
+        del self[last.name]
+
+
+
+def find_new_block(line):
+    """Return a new block."""
+    nocolor_line = remove_ansi_color(line)
+
+    for block_cls in BLOCK_CLASSES:
+        if regex.search(block_cls._match, nocolor_line):
+            obj = block_cls()
+            if obj.is_note():
+                note = Note()
+                note.append_line(line)
+                obj.append(note)
+
+            #print('Auto new block', obj)
+
+            return obj
+
+    return None
 
 
 class LogParser(object):
@@ -112,7 +160,7 @@ class LogParser(object):
 
     def _parse(self):
         if not self.body:
-            return []
+            return {}
 
         no_system_info = False
 
@@ -124,7 +172,7 @@ class LogParser(object):
                 if lines[0].startswith('Using worker: '):
                     lines = lines[1:]
                 if len(lines) == 1 and lines[0] == 'Done: Job Cancelled':
-                    return []
+                    return {}
             else:
                 if 'travis_fold:start:system_info' in self.body:
                     # See https://github.com/travis-ci/travis-ci/issues/4848
@@ -134,103 +182,124 @@ class LogParser(object):
                 else:
                     raise ParseError('header not found')
 
-        blocks = []
+        blocks = BlockDict()
 
         lines = self.body.splitlines()
 
-        current_block = Block('_header')
+        current_block = None
         current_command = None
-        timer_id = None
-        default_yml = False
         successful = False
 
-        for line in lines:
+        for line_no, line in enumerate(lines):
             nocolor_line = remove_ansi_color(line)
+
+            #print('line', current_block, current_command, nocolor_line)
+
             if nocolor_line.startswith('travis_time:start:'):
                 timer_id = nocolor_line[len('travis_time:start:'):]
                 assert timer_id
 
-                if blocks[-1].name == '_versions':
-                    current_block = Block('script')
-                    blocks.append(current_block)
+                current_block = blocks.last
+
+                #print('adding start', current_block, current_block.finished(), timer_id)
+
+                if current_block in ['_versions', '_versions-continued']:
+                    blocks.append(Block('script'))
+                    
+                elif current_block and current_block.finished():
+                    if (current_block.name.endswith('_environment_settings') or
+                            current_block.name == '_container_notice' or
+                            current_block.name.startswith('git')):
+                        blocks.append(SingleCommandBlock('_activate'))
+
+                    elif current_block.name in '_activate':
+                        blocks.append(CommandBlock('_versions-timed'))
+                    elif current_block.name in ['before_script', 'install'] or current_block.name in ['before_script-continued', 'install-continued']:
+                        blocks.append(Block('script'))
+                    else:
+                        raise ParseError('unexpected line after {0}: {1}'.format(current_block, line))
+
+                current_block = blocks.last
+
+                #print('start', current_block)
 
                 if current_block is None:
-                    if blocks[-1].name in ['before_script', 'install']:
-                        current_block = Block('script')
-                        blocks.append(current_block)
-                    elif no_system_info and len(blocks) == 2 and blocks[1].name == 'git' and len(blocks[1].commands) == 3 and '$ git checkout -qf ' in blocks[1].commands[2].lines[0]:
-                        # This will be an empty command; it is detected as such in the next loop and discarded
-                        current_block = blocks[1]
-                    else:
-                        print(blocks)
-                        raise ParseError('unexpected start: {0}'.format(line))
+                    print(blocks)
+                    raise ParseError('unexpected start: {0}'.format(line))
 
-                current_command = Command(timer_id)
-                current_block.commands.append(current_command)
+                allow_empty = current_block.allow_empty()
+
+                current_command = TimedCommand(timer_id, allow_empty)
+                current_block.append(current_command)
+
+                #print('start timed inserted', current_block)
+
             elif nocolor_line.startswith('travis_time:end:'):
-                assert current_command
                 data = nocolor_line[len('travis_time:end:'):]
                 end_timer_id, parameters = data.split(':', 1)
 
-                assert current_command.identifier == end_timer_id
+                current_command = blocks.last.last_item
 
-                if no_system_info and len(blocks) == 2 and blocks[1].name == 'git' and len(blocks[1]) == 4 and not current_command.lines:
-                    blocks[1].commands = blocks[1].commands[:-1]
-                    current_command = current_block = None
-                    continue
-                else:
-                    assert current_command.lines
+                if not isinstance(current_command, TimedCommand):
+                    if isinstance(blocks.last, JobCancelled):
+                        last_timed_command = blocks[-2].last_item
+                        assert isinstance(last_timed_command, TimedCommand)
+                        current_command = ContinuedTimedCommand(last_timed_command, allow_empty=True)
+                    else:
+                        raise ParseError('Last item is a {0} and not a TimedCommand: {1}'.format(type(current_command), current_command))
 
-                parameters = dict(parameter.split('=')
-                                  for parameter in parameters.split(','))
-                for key, value in parameters.items():
-                    setattr(current_command, key, value)
+                #print('end', current_block, current_command, end_timer_id)
+                if current_command.identifier != end_timer_id:
+                    raise ParseError('{0} is not {1}'.format(current_command, end_timer_id))
+
+                #if not current_command.lines:
+                #    print('end with no lines', end_timer_id, current_block, current_command)
+                #    sys.exit()
+
+                current_command.set_parameters(parameters)
                 current_command = None
             elif nocolor_line.startswith('travis_fold:start:'):
-                assert not current_block or current_block.name[0] == '_'
-
                 block_name = nocolor_line[len('travis_fold:start:'):]
 
-                block_group, _, block_group_cnt = block_name.partition('.')
+                last_block = blocks.last
 
-                try:
-                    # git.10
-                    block_group_cnt = int(block_group_cnt)
-                except ValueError:
-                    # git.checkout .submodule .etc
-                    block_group = block_name
-                    block_group_cnt = None
+                cls = None
+                if no_system_info and block_name == 'git.1':
+                    cls = OldGitBlock
+                elif block_name == 'apt':
+                    cls = AptBlock
+                else:
+                    cls = Block
 
-                if block_group_cnt:
-                    if block_group_cnt != 1:
-                        current_block = blocks[-1]
-                        if current_block.name != block_group:
-                            raise ParseError('unexpected block {0} after {1}'.format(block_name, current_block.name))
-                        assert len(current_block) == (block_group_cnt - 1)
-                        if no_system_info and current_block == 'git' and block_group_cnt == 3:
-                            current_command = Command('_untimed_git_checkout')
-                            current_block.commands.append(current_command)
-                            # block 0 should be _worker
-                            assert len(blocks) == 2
-                        continue
+                current_block = blocks.get(block_name, start=True, cls=cls)
 
-                assert block_group not in blocks
+                if last_block and current_block != last_block and last_block.finished() == False:
+                    raise ParseError('start of {0} during {1} unexpected after {2} ({3})'.format(block_name, current_block, last_block, last_block.finished()))
 
-                current_block = Block(block_group)
-                blocks.append(current_block)
+                if no_system_info and block_name == 'git.3':
+                    assert len(blocks) == 2  # block 0 should be _worker
+                    assert len(current_block) > 1  # TODO: better assert
+
+                    current_command = UntimedCommand('_untimed_git_checkout')
+                    current_block.commands.append(current_command)
+
+                current_block._finished = None
+
             elif nocolor_line.startswith('travis_fold:end:'):
                 block_name = nocolor_line[len('travis_fold:end:'):]
-                block_group, _, block_group_cnt = block_name.partition('.')
+                current_block = blocks[block_name]
 
-                try:
-                    # git.10
-                    block_group_cnt = int(block_group_cnt)
-                except ValueError:
-                    # git.checkout .submodule .etc
-                    block_group = block_name
-                    block_group_cnt = None
+                if not current_block == blocks.last:
+                    if blocks.last.name == current_block.name + '-continued':
+                        blocks.last._finished = True
+                    elif isinstance(blocks.last, JobCancelled):  # not used
+                        current_block = blocks[-2]
+                        last_timed_command = blocks[-2].last_item
+                        assert isinstance(last_timed_command, TimedCommand)
+                    else:
+                        raise ParseError('{0} != {1}'.format(current_block, blocks.last))
 
-                assert block_group == blocks[-1]
+                current_block._finished = True
                 current_block = None
                 current_command = None
             else:
@@ -238,59 +307,48 @@ class LogParser(object):
                     raise ParseError(
                         'unexpected travis_ in {0} while parsing {1}'.format(
                             line, current_block))
-                if nocolor_line.startswith('This job is running on container-'
-                                           'based infrastructure'):
-                    current_block = Block('_container_notice')
-                    blocks.append(current_block)
-                elif line.startswith('Using worker: '):
-                    assert not blocks
-                    current_block = Block('_worker_note')
-                    blocks.append(current_block)
-                elif nocolor_line.startswith('Setting environment variables '
-                                             'from repository settings'):
-                    current_block = Block('_environment_repo_settings')
-                    blocks.append(current_block)
-                elif nocolor_line.startswith('Setting environment variables '
-                                             'from .travis.yml'):
-                    previous_block = blocks[-1]
 
-                    current_block = Block('_environment_travis_yml')
+                new_block = find_new_block(line)
+                if new_block is not None:
+                    #print('found new block', new_block)
+                    #if blocks:
+                    #    print('last block was', blocks.last)
+                    blocks.append(new_block)
+                    # Single line item?
+                    if new_block.finished():
+                        current_block = None
 
-                    # remove previous empty _init block
-                    if previous_block == '_init':
-                        assert not len(previous_block)
-                        blocks = blocks[:-1]
-
-                    blocks.append(current_block)
-                elif nocolor_line.endswith(
-                        'Override the install: key in your .travis.yml '
-                        'to install dependencies.'):
-                    current_block = Block('_install')
-                    blocks.append(current_block)
-                elif nocolor_line.startswith('Could not find .travis.yml'):
-                    default_yml = True
-                elif default_yml and not current_block and blocks[-1].name in ['rvm']:
-                    current_block = Block('_versions')
-                    blocks.append(current_block)
-                elif current_command is None and current_block == 'git.checkout':
-                    if nocolor_line.startswith('$ cd ') or nocolor_line.startswith('$ git checkout -qf '):
-                        current_command = Command('_untimed_command')
-                elif current_command is None and current_block in ['git.checkout', 'git.submodule'] and nocolor_line.startswith('The command "git ') and '" failed and exited with ' in nocolor_line:
-                    current_command = current_block.commands[-1]
-
-                if current_block and current_block.name.startswith('_environment') and not line:
-                    # end of environment section
-                    current_block = Block('_init')
-                    blocks.append(current_block)
+                    current_block = new_block
+                    current_command = current_block.elements[-1]
                     continue
 
-                if current_block == 'apt':
-                    if nocolor_line.startswith('Installing APT Packages'):
-                        current_block.header_lines.append(nocolor_line)
+                if not nocolor_line:
+                    current_item = None # BlankLine()
+                else:
+                    current_item = None
+
+                if current_block is not None and current_item:
+                    current_block.append(current_item)
+                    if current_block.finished():
+                        #print('finishing block', current_block)
+                        current_block = None
+                        current_command = None
                         continue
-                    elif nocolor_line == '$ export DEBIAN_FRONTEND=noninteractive':
-                        current_command = Command('_untimed_command')
-                        current_block.commands.append(current_command)
+
+                #print(line)
+
+                if blocks and blocks.last.name in ['rvm'] and blocks.last.finished():
+                    current_block = Block('_versions')
+                    blocks.append(current_block)
+                elif current_command is None and current_block in ['git.checkout', 'git.submodule'] and nocolor_line.startswith('The command "git ') and '" failed and exited with ' in nocolor_line:
+                    # TODO: match the command in the quotes
+                    current_command = current_block.commands[-1]
+
+                #if current_block and current_block.name.startswith('_environment') and not line:
+                #    # end of environment section
+                #    current_block = Block('_init')
+                #    blocks.append(current_block)
+                #    continue
 
                 if not current_command and current_block and current_block.commands and nocolor_line.startswith('The command "'):
                     last_command = current_block.commands[-1]
@@ -303,7 +361,7 @@ class LogParser(object):
                         elif exit_code_pattern.startswith(nocolor_line):
                             # TODO: The exit_code_pattern needs to be a multi-line match
                             # e.g. happy5214/pywikibot-core/6.10
-                            current_command = Command('_unsolved_exit_code')
+                            current_command = Note('_unsolved_exit_code')
                             current_block.commands.append(current_command)
 
                         exit_code_pattern = 'The command "{0}" failed and exited with '.format(remove_ansi_color(last_command.lines[0])[2:])
@@ -325,53 +383,59 @@ class LogParser(object):
                         elif last_command.exit_code != exit_code:
                             raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
                         continue
-                    if nocolor_line == 'Done: Job Cancelled':
-                        current_block.header_lines.append(line)
-                        continue
-                    if nocolor_line == 'The build has been terminated.':
-                        current_block.header_lines.append(line)
-                        continue
-                    if nocolor_line.startswith('The log length has exceeded the limit'):
-                        current_block.header_lines.append(line)
-                        continue
 
-                if current_block == '_init' and not current_command and nocolor_line.startswith('$ '):
-                    if nocolor_line.endswith('--version'):
-                        current_block = Block('_versions')
-                        blocks.append(current_block)
-                    else:
-                        current_command = Command('_untimed_command')
-                        current_block.commands.append(current_command)
+                if current_block == '_activate' and current_block.finished():
+                    print('after _activate')
+                    blocks.append(AutoVersionCommandBlock('_versions'))
+                    current_block = blocks.last
 
-                if current_block == '_versions' and nocolor_line.startswith('$ '):
-                    if nocolor_line.endswith(' --version'):
-                        current_command = Command('_untimed_command')
-                        current_block.commands.append(current_command)
+                if current_block == '_job_cancelled' and current_block.finished():
+                    if isinstance(blocks[-2].elements[-1], TimedCommand):
+                        current_block = blocks[-2].__class__(blocks[-2].name + '-continued')
+                        current_command = ContinuedTimedCommand(blocks[-2].elements[-1], allow_empty=True)
+                        current_block.append(current_command)
                     else:
-                        raise ParseError('unknown version command: {0}'.format(line))
+                        current_block = Block('_stuff_after_job_cancelled-' + str(line_no))
+                    blocks.append(current_block)
+
+                #if current_block == '_init' and not current_command and nocolor_line.startswith('$ '):
+                #    if nocolor_line.endswith('--version'):
+                #        current_block = Block('_versions')
+                #        blocks.append(current_block)
+                #    else:
+                #        current_command = UntimedCommand()
+                #        current_block.commands.append(current_command)
 
                 if current_block and current_block.name.startswith('git'):
                     if nocolor_line == 'Your build has been stopped.':
                         current_block.header_lines.append(line)
-                        continue
+                        raise ParseError('needs to be migrated to new framework')
 
-                if successful:
-                    raise ParseError('extra text after success notice: {0}'.format(line))
+                current_block = blocks.last
 
-                if not current_block and current_command:
-                    raise ParseError('unexpected command outside of a block: {0}'.format(current_command))
-
-                if current_command is not None:
-                    current_command.lines.append(line)
-                elif current_block is not None and nocolor_line:
-                    if current_block.commands:
-                        print(current_block, current_command)
-                        raise ParseError('Unexpected line: {0}'.format(line))
-                    current_block.lines.append(line)
+                if current_block is not None:
+                    if current_block.finished():
+                        print('current block is finished', current_block)
+                        if nocolor_line == '':
+                            blocks.append(BlankLineBlock('_unexpected_blank_lines-' + str(line_no)))
+                            continue
+                    #print('adding {0} to block'.format(line))
+                    try:
+                        current_block.append_line(line)
+                    except Exception:
+                        # nasty hack to deal with
+                        # /home/jayvdb/tmp/travis-bot/jayvdb/pywikibot-core/1210.11-canceled.txt
+                        if nocolor_line == '':
+                            current_block = BlankLineBlock('_unexpected_blank_lines-' + str(line_no))
+                            blocks.append(current_block)
+                        else:
+                            print('failed on line {0}: {1}'.format(line_no, line))
+                            raise
                 elif no_system_info and len(blocks) == 2 and blocks[1].name == 'git' and nocolor_line.startswith('$ cd '):
                     # block 0 should be _worker
                     # todo; check it is 'cd <repo slug>'
-                    fake_command = Command('fake git.2')
+                    raise ParseError('fake git.2 needs to be migrated to new framework')
+                    fake_command = UntimedCommand('fake git.2')
                     fake_command.lines.append(line)
                     blocks[1].commands.append(fake_command)
                 elif nocolor_line:  # ignore blank lines
