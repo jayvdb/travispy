@@ -181,12 +181,14 @@ class AutoCommandBlock(Block):
 
 class AutoVersionCommandBlock(AutoCommandBlock):
 
-    _single_line_response = True
+    _single_line_response = False  # php --version emits multiple lines
 
     def append_line(self, line):
         nocolor_line = remove_ansi_color(line)
         if nocolor_line.startswith('$ '):
-            assert nocolor_line.endswith('--version')
+            # smalruby/smalruby/193.1 has export BUNDLE_GEMFILE=$PWD/Gemfile
+            if not nocolor_line.startswith('$ export '):
+                assert nocolor_line.endswith('--version')
         super(AutoVersionCommandBlock, self).append_line(line)
 
     def append(self, item):
@@ -234,6 +236,46 @@ class OldGitBlock(MixedCommandBlock):
             return False
 
     def finished(self):
+        return False
+
+
+class OSXRubyVersionBlock(AutoVersionCommandBlock):
+
+    def allow_empty(self):
+        #print('allow empty?')
+        return True
+
+    def append_line(self, line):
+        #print('appending' , line, self)
+        super(OSXRubyVersionBlock, self).append_line(line)
+
+    def finished(self):
+        if self.elements and self.elements[-1].lines and self.elements[-1].executed == 'bundle --version' and len(self.elements[-1].lines) == 3:
+            #print('finished: True', self.elements)
+            return True
+        else:
+            #if self.elements and self.elements[-1].lines:
+            #    #print('finished: False', self.elements[-1].lines)
+            return False
+
+    def append(self, block):
+        self.elements.append(block)
+
+
+class PHPActivateBlock(CommandBlock):
+
+    def allow_empty(self):
+        return True
+
+    def finished(self):
+        if self.elements and self.elements[0].lines and self.elements[0].executed != 'phpenv global 7 2>/dev/null':
+            return True
+
+        if self.elements and self.elements[0].lines and self.elements[0].executed == 'phpenv global 7 2>/dev/null':
+            if len(self.elements) > 3 and self.elements[-1].lines and self.elements[-1].executed == 'phpenv global 7':
+                print('finished', True)
+                return True
+
         return False
 
 

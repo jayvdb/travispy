@@ -201,7 +201,7 @@ class LogParser(object):
 
                 current_block = blocks.last
 
-                #print('adding start', current_block, current_block.finished(), timer_id)
+                print('adding start', current_block, current_block.finished(), timer_id)
 
                 if current_block in ['_versions', '_versions-continued']:
                     blocks.append(ScriptBlock('script'))
@@ -210,11 +210,19 @@ class LogParser(object):
                     if (current_block.name.endswith('_environment_variables') or
                             current_block.name == '_container_notice' or
                             current_block.name.startswith('git')):
-                        blocks.append(SingleCommandBlock('_activate'))
+                        if 'system_info' in blocks:
+                            build_language = blocks['system_info'].elements[0].lines[1]
+                            build_language = build_language[len('Build language: '):]
+                        else:
+                            build_language = None
+                        if build_language == 'php':
+                            blocks.append(PHPActivateBlock('_activate'))
+                        else:
+                            blocks.append(SingleCommandBlock('_activate'))
 
                     elif current_block.name in '_activate':
                         blocks.append(CommandBlock('_versions-timed'))
-                    elif current_block.name in ['before_script', 'install'] or current_block.name in ['before_script-continued', 'install-continued']:
+                    elif current_block.name in ['before_script', 'install', 'install.bundler'] or current_block.name in ['before_script-continued', 'install-continued']:
                         blocks.append(ScriptBlock('script'))
                     else:
                         raise ParseError('unexpected line after {0}: {1}'.format(current_block, line))
@@ -248,7 +256,7 @@ class LogParser(object):
                     else:
                         raise ParseError('Last item is a {0} and not a TimedCommand: {1}'.format(type(current_command), current_command))
 
-                #print('end', current_block, current_command, end_timer_id)
+                print('end', current_block, current_command, end_timer_id)
                 if current_command.identifier != end_timer_id:
                     raise ParseError('{0} is not {1}'.format(current_command, end_timer_id))
 
@@ -270,6 +278,8 @@ class LogParser(object):
                     cls = AptBlock
                 elif block_name == 'system_info':
                     cls = OneNoteBlock
+                elif block_name == 'announce':
+                    cls = AutoCommandBlock
                 else:
                     cls = CommandBlock
 
@@ -304,8 +314,11 @@ class LogParser(object):
                 current_block._finished = True
                 current_block = None
                 current_command = None
+                if block_name == 'announce':  # wikimedia/wikipedia-ios/543.1 needs this
+                    blocks.append(AutoVersionCommandBlock('_versions-extra'))
             else:
-                if 'travis_' in line:
+                # ruby coveralls includes travis variables in its payload
+                if 'travis_' in line and not '"travis_' in line:
                     raise ParseError(
                         'unexpected travis_ in {0} while parsing {1}'.format(
                             line, current_block))
@@ -330,7 +343,11 @@ class LogParser(object):
                 #print(line)
 
                 if blocks and blocks.last.name in ['rvm'] and blocks.last.finished():
-                    current_block = AutoVersionCommandBlock('_versions')
+                    if 'jupiter' in blocks['_worker'].elements[0].lines[0]:
+                        print('using OSXRubyVersionBlock')
+                        current_block = OSXRubyVersionBlock('_versions-odd')
+                    else:
+                        current_block = AutoVersionCommandBlock('_versions')
                     blocks.append(current_block)
                 elif current_command is None and current_block in ['git.checkout', 'git.submodule'] and nocolor_line.startswith('The command "git ') and '" failed and exited with ' in nocolor_line:
                     # TODO: match the command in the quotes
@@ -383,6 +400,10 @@ class LogParser(object):
                 done_block = blocks.last
                 assert done_block.exit_code is not None
                 previous_block = blocks[-2]
+                if previous_block.name.startswith('_unexpected_blank_lines'):
+                    previous_block = blocks[-3]
+                    if previous_block.name == 'after_success':  # wikimedia/wikipedia-ios/543.1
+                        previous_block = blocks[-4]
                 assert previous_block.name in ['script', 'script-continued']
                 last_command = previous_block.commands[-1]
                 assert isinstance(last_command, Command)
@@ -390,7 +411,7 @@ class LogParser(object):
                     raise ParseError('Build exit with {0}, but last command {1} doesnt have an exit code'.format(done_block.exit_code, last_command))
                 elif done_block.exit_code > 0 and last_command.exit_code == 0:
                     print('Build exit with {0}, but last command exit code was {1}'.format(done_block.exit_code, last_command.exit_code))
-                elif last_command.exit_code != done_block.exit_code:
+                elif done_block.exit_code > 0 and last_command.exit_code == 0:
                     raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(done_block.exit_code, last_command.exit_code))
                 continue
 

@@ -39,7 +39,6 @@ def split_extended_slug(slug):
 
 def get_job(t, extended_slug):
     user, project, build_id, job_id = split_extended_slug(extended_slug)
-    assert job_id
 
     repo = t.repo(user + '/' + project)
 
@@ -48,6 +47,14 @@ def get_job(t, extended_slug):
     assert int(build.number) == build_id
 
     build = t.build(build.id)
+
+    assert not job_id
+
+    if not job_id:
+        assert len(builds.jobs) == 1
+        job = builds.jobs[0]
+        print(log, job.log)
+        return job
 
     for build_job in build.jobs:
         build_id, build_job_number = build_job.number.split('.')
@@ -76,13 +83,15 @@ def get_filename(extended_slug):
 
 def save_job_log(job):
     user, project = job.repository.slug.split('/')
+    if not os.path.exists(os.path.join(test_data_dir, user, project)):
+        os.makedirs(os.path.join(test_data_dir, user, project))
     filename = os.path.join(
         test_data_dir,
         user, project,
         '{0}-{1}.txt'.format(job.number, job.state))
 
     assert not os.path.exists(filename)
-    with open(filename, 'wb') as f:
+    with codecs.open(filename, 'wb', 'utf8') as f:
         f.write(job.log.body)
 
     print('     wrote {0} ({1}) with {2} chars'.format(filename, job.id, len(job.log.body)))
@@ -107,6 +116,7 @@ class Test:
                 print('set job_id={0}'.format(job.id))
         else:
             job = self._travis.job(job_id)
+            assert job.log != ''
             save_job_log(job)
             log = job.log
 
@@ -562,5 +572,58 @@ class Test:
         assert block_names[0:4] == ['_worker', 'system_info', 'git.checkout', 'git.submodule']
         assert '_travis_yml_environment_variables' in block_names
 
+    def test_php(self):
+        log = self._get_job_log('wikimedia/mediawiki-extensions-Wikibase/5911.1', job_id=82696020)
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        print(block_names)
+
+        assert block_names == [
+            '_worker', 'system_info', 'git.checkout',
+            '_travis_yml_environment_variables', '_activate', '_versions',
+            'before_script', 'script', '_done',
+        ]
+
+    def test_php_2(self):
+        log = self._get_job_log('wikimedia/mediawiki/10528.4', job_id=82710079)
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        assert block_names == [
+            '_worker', 'system_info', 'git.checkout', 'services',
+            '_travis_yml_environment_variables', '_activate',
+            'before_install', 'before_script', 'script', '_done',
+        ]
+
+    def test_ios(self):
+        log = self._get_job_log('wikimedia/wikipedia-ios/543.1', job_id=82596055)
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        assert block_names == [
+            '_worker', 'system_info', 'git.checkout', 'git.submodule',
+            'rvm', '_versions-odd', 'announce', '_versions-extra',
+            'install', 'script', 'after_success', '_done',
+        ]
+
+    def test_ruby(self):
+        log = self._get_job_log('smalruby/smalruby/193.1', job_id=68760112)
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        assert block_names == [
+            '_worker', 'system_info', 'git.checkout',
+            '_travis_yml_environment_variables', 'rvm', '_versions',
+            'before_install', 'install.bundler', 'script', '_done',
+        ]
 
 

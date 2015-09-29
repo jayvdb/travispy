@@ -183,7 +183,8 @@ class Entity(object):
             for key, value in info.items():
                 # Log.body from Travis is empty, and is fetched on demand.
                 if key == 'body' and info['type'] == 'Log':
-                    assert value == ''
+                    if value != '':
+                        entity._body = value
                     continue
                 setattr(entity, key, value)
             result.append(entity)
