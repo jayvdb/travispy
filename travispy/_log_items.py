@@ -33,7 +33,9 @@ class Item(object):
         lines = [remove_ansi_color(line) for line in lines]
 
         return '<{0} {1}: ({2} lines): {3}>'.format(
-            self.__class__.__name__, self.identifier, len(self._lines), lines)
+            self.__class__.__name__,
+            self.identifier if self.identifier else '-unnamed-',
+            len(self._lines), lines)
 
 
 class Note(Item):

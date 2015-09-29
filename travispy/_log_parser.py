@@ -204,8 +204,8 @@ class LogParser(object):
                 #print('adding start', current_block, current_block.finished(), timer_id)
 
                 if current_block in ['_versions', '_versions-continued']:
-                    blocks.append(Block('script'))
-                    
+                    blocks.append(ScriptBlock('script'))
+
                 elif current_block and current_block.finished():
                     if (current_block.name.endswith('_environment_variables') or
                             current_block.name == '_container_notice' or
@@ -268,8 +268,10 @@ class LogParser(object):
                     cls = OldGitBlock
                 elif block_name == 'apt':
                     cls = AptBlock
+                elif block_name == 'system_info':
+                    cls = OneNoteBlock
                 else:
-                    cls = Block
+                    cls = CommandBlock
 
                 current_block = blocks.get(block_name, start=True, cls=cls)
 
@@ -328,31 +330,11 @@ class LogParser(object):
                 #print(line)
 
                 if blocks and blocks.last.name in ['rvm'] and blocks.last.finished():
-                    current_block = Block('_versions')
+                    current_block = AutoVersionCommandBlock('_versions')
                     blocks.append(current_block)
                 elif current_command is None and current_block in ['git.checkout', 'git.submodule'] and nocolor_line.startswith('The command "git ') and '" failed and exited with ' in nocolor_line:
                     # TODO: match the command in the quotes
                     current_command = current_block.commands[-1]
-
-                if not current_command and current_block and current_block.commands and nocolor_line.startswith('The command "'):
-                    last_command = current_block.commands[-1]
-                    if last_command.lines:
-                        exit_code_pattern = 'The command "{0}" exited with '.format(remove_ansi_color(last_command.lines[0])[2:])
-                        if nocolor_line.startswith(exit_code_pattern):
-                            exit_code = nocolor_line[len(exit_code_pattern):-1]
-                            last_command.exit_code = int(exit_code)
-                            continue
-                        elif exit_code_pattern.startswith(nocolor_line):
-                            # TODO: The exit_code_pattern needs to be a multi-line match
-                            # e.g. happy5214/pywikibot-core/6.10
-                            current_command = Note('_unsolved_exit_code-2')
-                            current_block.commands.append(current_command)
-
-                        exit_code_pattern = 'The command "{0}" failed and exited with '.format(remove_ansi_color(last_command.lines[0])[2:])
-                        if nocolor_line.startswith(exit_code_pattern):
-                            exit_code = nocolor_line[len(exit_code_pattern):].split(' during ')[0]
-                            last_command.exit_code = int(exit_code)
-                            continue
 
                 if current_block == '_activate' and current_block.finished():
                     print('after _activate')
@@ -393,18 +375,23 @@ class LogParser(object):
                     previous_block_name = None if not blocks else blocks[-1].name
                     raise ParseError('unexpected line after {0}: {1!r}'.format(previous_block_name, line))
 
+            for block in blocks:
+                if block.__class__ == Block:
+                    raise ParseError('Block needs to be converted to something else')
+
             if blocks.last == '_done':
                 done_block = blocks.last
+                assert done_block.exit_code is not None
                 previous_block = blocks[-2]
                 assert previous_block.name in ['script', 'script-continued']
                 last_command = previous_block.commands[-1]
-
+                assert isinstance(last_command, Command)
                 if last_command.exit_code is None:
-                    raise ParseError('Build exit with {0}, but last command doesnt have an exit code'.format(exit_code))
+                    raise ParseError('Build exit with {0}, but last command {1} doesnt have an exit code'.format(done_block.exit_code, last_command))
                 elif done_block.exit_code > 0 and last_command.exit_code == 0:
-                    print('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
+                    print('Build exit with {0}, but last command exit code was {1}'.format(done_block.exit_code, last_command.exit_code))
                 elif last_command.exit_code != done_block.exit_code:
-                    raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(exit_code, last_command.exit_code))
+                    raise ParseError('Build exit with {0}, but last command exit code was {1}'.format(done_block.exit_code, last_command.exit_code))
                 continue
 
         return blocks

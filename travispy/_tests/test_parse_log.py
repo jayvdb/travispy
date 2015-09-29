@@ -275,6 +275,132 @@ class Test:
 
         assert len(block_names) == 9
 
+    def test_new_structure_failed(self):
+        log = self._get_job_log('wikimedia/pywikibot-core/2889.11', job_id=81691593)
+
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        assert block_names[0] == '_worker'
+        assert '_worker' in blocks
+        block = blocks['_worker']
+
+        assert len(block.elements) == 2
+        assert isinstance(block.elements[0], Note)
+        assert len(block.elements[0].lines) == 1
+        assert block.elements[0].lines[0] == 'Using worker: worker-linux-docker-397f32d0.prod.travis-ci.org:travis-linux-1'
+        assert isinstance(block.elements[1], BlankLine)
+
+        assert 'before_install' in block_names
+        #assert 'install' in block_names
+        assert 'script' in block_names
+
+        assert block_names[1] == 'system_info'
+        assert 'system_info' in blocks
+        block = blocks['system_info']
+
+        assert isinstance(block, OneNoteBlock)
+        assert len(block.elements) == 1
+        assert isinstance(block.elements[0], Note)
+        assert block.elements[0].lines[0] == '\x1b[0K\x1b[33;1mBuild system information\x1b[0m'
+        assert block.elements[0].lines[-1] == 'OS name: "linux", version: "3.13.0-29-generic", arch: "amd64", family: "unix"'
+
+        assert block_names[2] == 'git.checkout'
+        assert 'git.checkout' in blocks
+        block = blocks['git.checkout']
+
+        assert len(block.elements) == 1
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '03dc9794'
+        assert command.executed == 'git clone --depth=50 --branch=master https://github.com/wikimedia/pywikibot-core.git wikimedia/pywikibot-core'
+
+        assert block_names[3] == 'git.submodule'
+        assert 'git.submodule' in blocks
+        block = blocks['git.submodule']
+
+        assert len(block.elements) == 2
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '108fb4ee'
+        assert command.executed == 'git submodule init'
+
+        assert isinstance(block.elements[1], TimedCommand)
+        command = block.elements[1]
+        assert command.identifier == '01c2e164'
+        assert command.executed == 'git submodule update'
+
+        assert block_names[4] == '_container_notice'
+        assert '_container_notice' in blocks
+
+        assert block_names[5] == '_repository_environment_variables'
+        assert '_repository_environment_variables' in blocks
+
+        assert block_names[6] == '_travis_yml_environment_variables'
+        assert '_travis_yml_environment_variables' in blocks
+
+        assert block_names[7] == '_activate'
+        assert '_activate' in blocks
+
+        assert block_names[8] == '_versions'
+        assert '_versions' in blocks
+
+        assert block_names[9] == 'before_install'
+        assert 'before_install' in blocks
+        block = blocks['before_install']
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '03083856'
+        assert command.executed == """if [[ "$PYSETUP_TEST_EXTRAS" != '1' ]]; then rm requirements.txt ; fi"""
+
+        assert isinstance(block.elements[1], TimedCommand)
+        command = block.elements[1]
+        assert command.identifier == '0cdc9510'
+        assert command.executed == """if [[ "$SITE_ONLY" == '1' ]]; then export USE_NOSE=1; fi"""
+
+        # surrogate 'install' block
+        assert block_names[10] == '_python_no_requirements'
+        assert '_python_no_requirements' in blocks
+        block = blocks['_python_no_requirements']
+
+        assert block_names[11] == 'before_script'
+        assert 'before_script' in blocks
+        block = blocks['before_script']
+
+        assert block_names[12] == 'script'
+        assert 'script' in blocks
+        block = blocks['script']
+
+        assert len(block.elements) == 16
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '0b8c05de'
+        assert command.executed == """if [[ "$PYSETUP_TEST_EXTRAS" != '1' ]]; then pip install mwoauth -r requests-requirements.txt ; fi"""
+
+        command = block.elements[-1]
+        assert command.identifier == '0b7f1ea4'
+        assert command.executed == """if [[ "$USE_NOSE" == "1" ]]; then nosetests --version ; if [[ "$SITE_ONLY" == "1" ]]; then echo "Running site tests only code ${LANGUAGE} on family ${FAMILY}" ; python setup.py nosetests --tests tests --verbosity=2 -a "family=$FAMILY,code=$LANGUAGE" ; else python setup.py nosetests --tests tests --verbosity=2 ; fi ; else python setup.py test ; fi"""
+
+        assert command.exit_code == 1
+
+        # assert 'exited with 1' in command.lines[-1]  # this lines disappears
+
+        assert block_names[13] == '_done'
+        assert '_done' in blocks
+        block = blocks['_done']
+
+        assert isinstance(block, Done)
+        assert block.exit_code == 1
+        assert len(block.elements) == 1
+        assert isinstance(block.elements[0], Note)
+        assert block.elements[0].lines[0] == 'Done. Your build exited with 1.'
+
     def test_install_then_auto_script(self):
         log = self._get_job_log('jayvdb/pywikibot-i18n/5.1', job_id=78700066)
 
@@ -297,12 +423,98 @@ class Test:
         blocks = log._parse()
         block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
 
-        assert 'script' in block_names
-
         assert block_names == [
             '_no_travis_yml_warning', '_worker', '_standard_configuration_warning',
             'system_info', 'git.checkout',
             '_container_notice', 'rvm', '_versions', 'script', '_done']
+
+        assert block_names[0] == '_no_travis_yml_warning'
+        assert '_no_travis_yml_warning' in blocks
+        block = blocks['_no_travis_yml_warning']
+
+        assert len(block.elements) == 2
+        assert len(block.elements[0].lines) == 2
+        assert 'unable to find a .travis.yml file' in block.elements[0].lines[0]
+
+        assert isinstance(block.elements[1], BlankLine)
+
+        assert block_names[1] == '_worker'
+        assert '_worker' in blocks
+        block = blocks['_worker']
+
+        assert block_names[2] == '_standard_configuration_warning'
+        assert '_standard_configuration_warning' in blocks
+        block = blocks['_standard_configuration_warning']
+
+        assert block_names[3] == 'system_info'
+        assert 'system_info' in blocks
+        block = blocks['system_info']
+
+        assert block_names[4] == 'git.checkout'
+        assert 'git.checkout' in blocks
+        block = blocks['git.checkout']
+
+        assert block_names[5] == '_container_notice'
+        assert '_container_notice' in blocks
+        block = blocks['_container_notice']
+
+        assert block_names[6] == 'rvm'
+        assert 'rvm' in blocks
+        block = blocks['rvm']
+
+        assert len(block.elements) == 1
+
+        assert isinstance(block.elements[0], TimedCommand)
+        command = block.elements[0]
+        assert command.identifier == '2c60aab0'
+        assert command.executed == 'rvm use default'
+
+        assert block_names[7] == '_versions'
+        assert '_versions' in blocks
+        block = blocks['_versions']
+
+        assert isinstance(block, AutoVersionCommandBlock)
+        assert len(block.elements) == 4
+
+        assert isinstance(block.elements[0], Command)
+        assert len(block.elements[0].lines) == 2
+        assert block.elements[0].executed == 'ruby --version'
+        assert block.elements[0].lines[1] == 'ruby 1.9.3p551 (2014-11-13 revision 48407) [x86_64-linux]'
+        assert block.elements[0].exit_code is None
+
+        assert isinstance(block.elements[1], Command)
+        assert len(block.elements[1].lines) == 2
+        assert block.elements[1].executed == 'rvm --version'
+        assert block.elements[1].lines[1] == 'rvm 1.26.10 (latest-minor) by Wayne E. Seguin <wayneeseguin@gmail.com>, Michal Papis <mpapis@gmail.com> [https://rvm.io/]'
+
+        assert isinstance(block.elements[2], Command)
+        assert len(block.elements[2].lines) == 2
+        assert block.elements[2].executed == 'bundle --version'
+        assert block.elements[2].lines[1] == 'Bundler version 1.7.6'
+
+        assert isinstance(block.elements[3], Command)
+        assert len(block.elements[3].lines) == 2
+        assert block.elements[3].executed == 'gem --version'
+        assert block.elements[3].lines[1] == '2.4.5'
+
+        assert block_names[8] == 'script'
+        assert 'script' in blocks
+        block = blocks['script']
+
+        assert isinstance(block, CommandBlock)
+        assert len(block.elements) == 1
+
+        assert isinstance(block.elements[0], TimedCommand)
+        assert len(block.elements[0].lines) == 8  # should be 6?
+        assert block.elements[0].executed == 'rake'
+        assert block.elements[0].lines[1] == 'rake aborted!'
+        assert block.elements[0].exit_code == 1
+
+        assert block_names[9] == '_done'
+        assert '_done' in blocks
+        block = blocks['_done']
+
+        assert block.exit_code == 1
 
     def test_submodule_checkout_failed(self):
         log = self._get_job_log('jayvdb/citeproc-py/20.1', job_id=81524549)

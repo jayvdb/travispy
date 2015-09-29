@@ -62,6 +62,7 @@ class Block(object):
         else:
             new_item = Note()
             new_item.append_line(line)
+            # TODO add the Note?
 
     def finished(self):
         return self._finished
@@ -85,6 +86,18 @@ class Block(object):
 
         return '<block {0} ({1} elements): {2}>'.format(
             self.name, len(self.elements), elements)
+
+
+class OneNoteBlock(Block):
+
+    def append_line(self, line):
+        if not self.elements:
+            note = Note()
+            self.append(note)
+        else:
+            note = self.elements[-1]
+            assert isinstance(note, Note)
+        note.append_line(line)
 
 
 class CommandBlock(Block):
@@ -176,16 +189,9 @@ class AutoVersionCommandBlock(AutoCommandBlock):
         if nocolor_line.startswith('$ '):
             assert nocolor_line.endswith('--version')
         super(AutoVersionCommandBlock, self).append_line(line)
-        #print('autoversion', line)
 
     def append(self, item):
         raise RuntimeError('not allowed to add {0} to {1}'.format(item, self))
-
-    # no separator after version /home/jayvdb/tmp/travis-bot/jayvdb/citeproc-test/13.1-failed.txt
-    #def finished(self):
-    #    print('is finished', self.elements)
-    #    if self.elements and len(self.elements[-1]) == 2 and 'gem --version' in self.elements[-1][0]:
-    #        return True
 
 
 class MixedCommandBlock(AutoCommandBlock):
@@ -205,6 +211,7 @@ class ScriptBlock(CommandBlock):
 
 class OldGitBlock(MixedCommandBlock):
 
+    """Special handler for old 'git.*' blocks."""
 
     def __len__(self):
         if len(self.elements) == 4 and not self.elements[-1].lines and self.elements[-1].finished():
