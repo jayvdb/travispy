@@ -48,9 +48,8 @@ class Block(object):
         if self.elements:
             last_command = self.elements[-1]
             #print('append to block', last_command, type(last_command), line, last_command.finished())
-            if isinstance(last_command, TimedCommand) and not last_command.finished():
-                last_command.append_line(line)
-                return
+            if isinstance(last_command, TimedCommand):
+                raise ParseError('not expecting {0}.append_line({1})'.format(self, line))
 
         nocolor_line = remove_ansi_color(line)
         if nocolor_line.startswith('$ '):
@@ -386,20 +385,21 @@ class TravisYmlEnvironmentVariables(EnvironmentSettings):
     _match = '^Setting environment variables from \.travis\.yml'
 
 
-class AptBlock(Block):
+class AptBlock(CommandBlock):
 
     def append_line(self, line):
-        if 'Installing APT Packages' in line:
+        if not self.elements:
+            assert 'Installing APT Packages' in line
             header = Note()
             header.lines.append(line)
             self.elements.append(header)
-        elif '$ export DEBIAN_FRONTEND=noninteractive' in line:
-            current_command = UntimedCommand()
-            current_command.lines.append(line)
-            self.elements.append(current_command)
+        # TODO: this is an ugly workaround for CommandBlock asserting that the previous item is a Command
+        elif len(self.elements) == 1:
+            header = TimedCommand('ugly')
+            header.lines.append(line)
+            self.elements.append(header)
         else:
-            super(AptBlock, self).append_line(line)
-            #raise ParseError('unexpected additional line for {0}: {1}'.format(self, line))
+            self.elements[-1].append_line(line)
 
 
 class BlankLineBlock(Block):

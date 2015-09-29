@@ -401,6 +401,29 @@ class Test:
         assert isinstance(block.elements[0], Note)
         assert block.elements[0].lines[0] == 'Done. Your build exited with 1.'
 
+    def test_apt(self):
+        log = self._get_job_log('happy5214/pywikibot-core/6.10', job_id=73883551)
+
+        assert log.body != ''
+
+        blocks = log._parse()
+        block_names = list(name for name in blocks.keys() if not name.startswith('_unexpected_blank_lines'))
+
+        assert 'apt' in blocks
+        block = blocks['apt']
+
+        assert isinstance(block, AptBlock)
+        assert len(block.elements) == 4
+
+        assert isinstance(block.elements[0], Note)
+        assert block.elements[0].lines[0] == '\x1b[0K\x1b[33;1mInstalling APT Packages (BETA)\x1b[0m'
+
+        assert isinstance(block.elements[1], TimedCommand)  # TODO: should be untimed
+        assert block.elements[1].executed == 'export DEBIAN_FRONTEND=noninteractive'
+
+        assert isinstance(block.elements[2], TimedCommand)
+        assert block.elements[2].executed == 'sudo -E apt-get -yq update &>> ~/apt-get-update.log'
+
     def test_install_then_auto_script(self):
         log = self._get_job_log('jayvdb/pywikibot-i18n/5.1', job_id=78700066)
 
