@@ -18,6 +18,7 @@
     "pull_request": false,
     "config": {
       "group": "stable",
+      "os": "linux",
       "language": "python",
       "script": ["py.test"],
       "python": ["2.7"],
@@ -37,6 +38,7 @@
     "config": {
       "group": "stable",
       "language": "python",
+      "os": "linux",
       "script": ["py.test"],
       "python": ["2.7"],
       "sudo": false,
