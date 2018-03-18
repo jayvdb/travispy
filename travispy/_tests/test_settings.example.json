@@ -75,7 +75,6 @@
     "config": {
       ".result": "configured",
       "language": "python",
-      "os": "linux",
       "python": "2.7",
       "script": ["py.test"],
       "sudo": false
